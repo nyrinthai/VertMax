@@ -1,4 +1,4 @@
-# Vertical Tracker
+# VertMax
 A mobile app built with Expo and React Native that measures vertical jump height from a video.
 
 ## Overview
