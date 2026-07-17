@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-export default function preview() {
+export default function Preview() {
 
     const { videoUri } = useLocalSearchParams<{ videoUri: string }>();
 

@@ -12,6 +12,14 @@ from mediapipe.tasks.python import vision
 
 LEFT_SHOULDER, RIGHT_SHOULDER = 11, 12
 LEFT_HIP, RIGHT_HIP = 23, 24
+LEFT_KNEE, RIGHT_KNEE = 25, 26
+LEFT_ANKLE, RIGHT_ANKLE = 27, 28
+BODY_LANDMARKS = (
+    LEFT_SHOULDER, RIGHT_SHOULDER,
+    LEFT_HIP, RIGHT_HIP,
+    LEFT_KNEE, RIGHT_KNEE,
+    LEFT_ANKLE, RIGHT_ANKLE,
+)
 
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
@@ -37,15 +45,17 @@ def _average(values):
     return float(np.mean(values)) if values else 0.0
 
 
+def _has_visible_body(landmarks) -> bool:
+    for idx in BODY_LANDMARKS:
+        lm = landmarks[idx]
+        if not (0.02 <= lm.x <= 0.98 and 0.02 <= lm.y <= 0.98):
+            return False
+        if getattr(lm, "visibility", 1.0) < 0.5:
+            return False
+    return True
+
+
 def _find_stable_baseline_window(hip_ys, search_frac=0.6, window_frames=8):
-    """
-    Instead of blindly trusting the first few frames (which may capture
-    setup/walk-in movement, not actual standing), scan the first
-    `search_frac` of the clip for the window with the LOWEST variance in
-    hip position -- i.e. the steadiest moment -- and use that as the
-    calibration baseline. Much more robust to clips that don't start
-    with the person already standing still and ready.
-    """
     search_end = max(window_frames + 1, int(len(hip_ys) * search_frac))
     best_start = 0
     best_variance = float("inf")
@@ -69,7 +79,7 @@ def _detect_from_samples(
     max_flight_seconds: float = 1.2,
 ) -> JumpResult:
     if len(samples) < 10:
-        return JumpResult(None, None, error="Video too short or too few frames with a detected pose.")
+        return JumpResult(None, None, error="Could not detect a full body clearly enough in this clip.")
 
     times = [s[0] for s in samples]
     hip_ys = [s[1] for s in samples]
@@ -115,29 +125,18 @@ def _detect_from_samples(
             if takeoff_idx is not None and (i - takeoff_idx) > max_flight_frames:
                 return JumpResult(
                     None, None,
-                    error=(
-                        "Detected takeoff but no plausible landing within "
-                        f"{max_flight_seconds}s. The clip may include extra "
-                        "footage before/after the jump, or the camera/framing "
-                        "changed mid-clip. Try trimming the video to just the jump."
-                    ),
+                    error="Could not detect a complete jump with a full-body view.",
                 )
 
-    if takeoff_idx is None or landing_idx is None:
-        return JumpResult(
-            None, None,
-            error="Could not detect a clear jump in this clip (no takeoff/landing found)."
-        )
+    if takeoff_idx is None:
+        return JumpResult(None, None, error="No jump detected in this clip.")
+    if landing_idx is None:
+        return JumpResult(None, None, error="Could not detect a complete jump with a full-body view.")
 
     return JumpResult(takeoff_time=times[takeoff_idx], landing_time=times[landing_idx])
 
 
 def analyze_jump(video_path: str) -> JumpResult:
-    """
-    Runs pose detection over the full video and returns detected
-    takeoff/landing timestamps in seconds (matching player.currentTime
-    units on the RN side).
-    """
     model_path = ensure_model()
 
     base_options = mp_python.BaseOptions(model_asset_path=model_path)
@@ -171,6 +170,9 @@ def analyze_jump(video_path: str) -> JumpResult:
 
             if result.pose_landmarks:
                 lm = result.pose_landmarks[0]
+                if not _has_visible_body(lm):
+                    frame_idx += 1
+                    continue
                 hip_y = (lm[LEFT_HIP].y + lm[RIGHT_HIP].y) / 2.0
                 shoulder_y = (lm[LEFT_SHOULDER].y + lm[RIGHT_SHOULDER].y) / 2.0
                 torso_len = abs(hip_y - shoulder_y)

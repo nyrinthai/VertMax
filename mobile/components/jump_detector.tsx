@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
+import Constants from 'expo-constants';
 
-const API_BASE_URL = '';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 type DetectionResult = {
     takeoffTime: number;
@@ -33,9 +34,6 @@ export default function AutoJumpDetector({ videoUri, onDetected, onError }: Prop
                 const response = await fetch(`${API_BASE_URL}/analyze-jump`, {
                     method: 'POST',
                     body: formData,
-                    headers: {
-                        'Content-Type': 'multipart/form-data',
-                    },
                 });
 
                 const data = await response.json();
@@ -72,7 +70,7 @@ export default function AutoJumpDetector({ videoUri, onDetected, onError }: Prop
         return () => {
             cancelled = true;
         };
-    }, [videoUri]);
+    }, [videoUri, onDetected, onError]);
 
     return null;
 }
